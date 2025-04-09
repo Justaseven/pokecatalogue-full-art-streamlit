@@ -82,7 +82,6 @@ def update_user_card(user_id, nom_complet, souhaite, possede):
 @st.cache_data
 def load_cards():
     df = pd.read_csv(CSV_DATA)
-    df["extension_annee"] = df["extension"]
     df["année"] = df["Date de sortie"].str.extract(r"(\d{4})", expand=False)
     df["extension_annee"] = df["année"].fillna("") + " - " + df["extension"]
     return df
@@ -136,26 +135,33 @@ menu = st.sidebar.radio("Vue", ["Catalogue complet", "🧾 Liste d’achats", "�
 def normalize(text):
     return unicodedata.normalize("NFKD", str(text)).encode("ASCII", "ignore").decode().lower()
 
-search_input = st.sidebar.text_input("Recherche 🔎")
+# Recherche avec autocomplétion dynamique
+search_input = st.sidebar.text_input("Recherche 🔎", key="search_input")
 all_options = df["nom"].dropna().unique().tolist() + df["extension"].dropna().unique().tolist()
-suggestions = [s[0] for s in process.extract(search_input, all_options, limit=10)] if search_input else []
+suggestions = [s[0] for s in process.extract(search_input, all_options, limit=5)] if search_input else []
 
+# Auto-remplissage du champ de recherche si suggestion trouvée
 if suggestions:
-    st.sidebar.selectbox("Suggestions", suggestions)
+    selected_suggestion = st.sidebar.selectbox("Suggestions", suggestions, index=0)
+    if selected_suggestion and selected_suggestion != search_input:
+        st.session_state.search_input = selected_suggestion
+        st.experimental_rerun()
 
 # Filtres dynamiques
 st.sidebar.markdown("---")
 with st.sidebar.expander("🎨 Filtrer par extension"):
     extensions = sorted(df["extension_annee"].dropna().unique())
-    selected_extensions = st.multiselect("Extensions", extensions, default=[])
+    selected_extensions = st.multiselect("Extensions", extensions, default=st.session_state.get("ext", []), key="ext")
     if st.button("Réinitialiser extensions"):
-        selected_extensions.clear()
+        st.session_state.ext = []
+        st.experimental_rerun()
 
 with st.sidebar.expander("🖌️ Filtrer par illustrateur"):
     illustrateurs = sorted(df["Illustrateur"].dropna().unique())
-    selected_illustrateurs = st.multiselect("Illustrateurs", illustrateurs, default=[])
+    selected_illustrateurs = st.multiselect("Illustrateurs", illustrateurs, default=st.session_state.get("illu", []), key="illu")
     if st.button("Réinitialiser illustrateurs"):
-        selected_illustrateurs.clear()
+        st.session_state.illu = []
+        st.experimental_rerun()
 
 def apply_filters(data):
     result = data.copy()
