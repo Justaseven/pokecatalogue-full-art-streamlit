@@ -130,55 +130,71 @@ df = df_cards.copy()
 df["souhaite"] = df["nom_complet"].isin(df_user_cards[df_user_cards["souhaite"] == 1]["nom_complet"])
 df["possede"] = df["nom_complet"].isin(df_user_cards[df_user_cards["possede"] == 1]["nom_complet"])
 
-# ------------------ FILTRES ------------------
-menu = st.sidebar.radio("Vue", ["Catalogue complet", "🧾 Liste d’achats", "📦 Ma Collection"])
-
+# ------------------ FONCTION DE NORMALISATION ------------------
 def normalize(text):
     return unicodedata.normalize("NFKD", str(text)).encode("ASCII", "ignore").decode().lower()
+
+# ------------------ FILTRES ------------------
+menu = st.sidebar.radio("Vue", ["Catalogue complet", "🧾 Liste d’achats", "📦 Ma Collection"])
 
 if "search_input" not in st.session_state:
     st.session_state.search_input = ""
 
-search_input = st.sidebar.text_input("Recherche 🔎", value=st.session_state.search_input, key="search_box")
+# Zone de recherche avec sélection auto du texte
+search_input = st.sidebar.text_input("Recherche 🔎", st.session_state.search_input, key="search_input_box")
+st.markdown(
+    """
+    <script>
+    const input = window.parent.document.querySelector('input[data-testid="stTextInput"]');
+    if (input) {
+        input.onclick = function() { setTimeout(() => input.select(), 50); };
+    }
+    </script>
+    """, unsafe_allow_html=True
+)
+
 all_options = df["nom"].dropna().unique().tolist() + df["extension"].dropna().unique().tolist()
 suggestions = [s[0] for s in process.extract(search_input, all_options, limit=10)] if search_input else []
 
-selected_suggestion = st.sidebar.selectbox("Suggestions", suggestions) if suggestions else None
-
-if selected_suggestion and selected_suggestion != st.session_state.search_input:
+# Mise à jour automatique si une suggestion est sélectionnée
+selected_suggestion = st.sidebar.selectbox("Suggestions", suggestions, index=0 if suggestions else None) if suggestions else None
+if selected_suggestion and selected_suggestion != search_input:
     st.session_state.search_input = selected_suggestion
+    search_input = selected_suggestion
     st.rerun()
 
-# Filtres dynamiques
+# Sections filtres extension / illustrateur
 st.sidebar.markdown("---")
 with st.sidebar.expander("🎨 Filtrer par extension"):
     extensions = sorted(df["extension_annee"].dropna().unique())
-    selected_extensions = st.multiselect("Extensions", extensions, default=[], key="ext_filter")
+    selected_extensions = st.multiselect("Extensions", extensions)
     if st.button("Réinitialiser extensions"):
-        st.session_state.ext_filter = []
+        selected_extensions = []
 
 with st.sidebar.expander("🖌️ Filtrer par illustrateur"):
     illustrateurs = sorted(df["Illustrateur"].dropna().unique())
-    selected_illustrateurs = st.multiselect("Illustrateurs", illustrateurs, default=[], key="illu_filter")
+    selected_illustrateurs = st.multiselect("Illustrateurs", illustrateurs)
     if st.button("Réinitialiser illustrateurs"):
-        st.session_state.illu_filter = []
+        selected_illustrateurs = []
 
+# Application des filtres
 def apply_filters(data):
     result = data.copy()
-    if st.session_state.ext_filter:
-        result = result[result["extension_annee"].isin(st.session_state.ext_filter)]
-    if st.session_state.illu_filter:
-        result = result[result["Illustrateur"].isin(st.session_state.illu_filter)]
-    if st.session_state.search_input:
-        norm_search = normalize(st.session_state.search_input)
+    if selected_extensions:
+        result = result[result["extension_annee"].isin(selected_extensions)]
+    if selected_illustrateurs:
+        result = result[result["Illustrateur"].isin(selected_illustrateurs)]
+    if search_input:
+        norm_search = normalize(search_input)
         result = result[
             result["nom"].apply(normalize).str.contains(norm_search, na=False) |
             result["extension"].apply(normalize).str.contains(norm_search, na=False) |
-            result["numero"].astype(str).str.contains(st.session_state.search_input)
+            result["numero"].astype(str).str.contains(search_input)
         ]
     return result
 
-df_filtered = apply_filters(df)
+# Si recherche vide, on réinitialise tout
+df_filtered = apply_filters(df) if search_input or selected_extensions or selected_illustrateurs else df.copy()
 
 # ------------------ VUE + PAGINATION ------------------
 col_left, col_right = st.columns([8, 2])
@@ -240,12 +256,12 @@ if menu == "Catalogue complet":
 
 elif menu == "🧾 Liste d’achats":
     st.subheader("🧾 Liste de souhaits")
-    wishlist_df = df_filtered[(df_filtered["souhaite"]) & (~df_filtered["possede"])]
+    wishlist_df = df_paginated[(df_paginated["souhaite"]) & (~df_paginated["possede"])]
     for i, row in wishlist_df.iterrows():
         show_card(row, i, grille=not view_mode)
 
 elif menu == "📦 Ma Collection":
     st.subheader("📦 Ma Collection")
-    owned_df = df_filtered[df_filtered["possede"]]
+    owned_df = df_paginated[df_paginated["possede"]]
     for i, row in owned_df.iterrows():
         show_card(row, i, grille=not view_mode)
