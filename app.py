@@ -82,6 +82,7 @@ def update_user_card(user_id, nom_complet, souhaite, possede):
 @st.cache_data
 def load_cards():
     df = pd.read_csv(CSV_DATA)
+    df["extension_annee"] = df["extension"]
     df["année"] = df["Date de sortie"].str.extract(r"(\d{4})", expand=False)
     df["extension_annee"] = df["année"].fillna("") + " - " + df["extension"]
     return df
@@ -135,33 +136,38 @@ menu = st.sidebar.radio("Vue", ["Catalogue complet", "🧾 Liste d’achats", "�
 def normalize(text):
     return unicodedata.normalize("NFKD", str(text)).encode("ASCII", "ignore").decode().lower()
 
-# Recherche avec autocomplétion dynamique
-search_input = st.sidebar.text_input("Recherche 🔎", key="search_input")
-all_options = df["nom"].dropna().unique().tolist() + df["extension"].dropna().unique().tolist()
-suggestions = [s[0] for s in process.extract(search_input, all_options, limit=5)] if search_input else []
+if "search_input" not in st.session_state:
+    st.session_state.search_input = ""
 
-# Auto-remplissage du champ de recherche si suggestion trouvée
+search_input = st.sidebar.text_input("Recherche 🔎", st.session_state.search_input, key="search_box")
+all_options = df["nom"].dropna().unique().tolist() + df["extension"].dropna().unique().tolist()
+suggestions = [s[0] for s in process.extract(search_input, all_options, limit=10)] if search_input else []
+
 if suggestions:
-    selected_suggestion = st.sidebar.selectbox("Suggestions", suggestions, index=0)
-    if selected_suggestion and selected_suggestion != search_input:
+    selected_suggestion = st.sidebar.selectbox("Suggestions", suggestions)
+    if selected_suggestion and selected_suggestion != st.session_state.search_input:
         st.session_state.search_input = selected_suggestion
-        st.experimental_rerun()
+        st.rerun()
 
 # Filtres dynamiques
 st.sidebar.markdown("---")
 with st.sidebar.expander("🎨 Filtrer par extension"):
     extensions = sorted(df["extension_annee"].dropna().unique())
-    selected_extensions = st.multiselect("Extensions", extensions, default=st.session_state.get("ext", []), key="ext")
+    selected_extensions = st.multiselect("Extensions", extensions, default=st.session_state.get("extensions", []))
     if st.button("Réinitialiser extensions"):
-        st.session_state.ext = []
-        st.experimental_rerun()
+        selected_extensions = []
+        st.session_state["extensions"] = []
+        st.rerun()
+    st.session_state["extensions"] = selected_extensions
 
 with st.sidebar.expander("🖌️ Filtrer par illustrateur"):
     illustrateurs = sorted(df["Illustrateur"].dropna().unique())
-    selected_illustrateurs = st.multiselect("Illustrateurs", illustrateurs, default=st.session_state.get("illu", []), key="illu")
+    selected_illustrateurs = st.multiselect("Illustrateurs", illustrateurs, default=st.session_state.get("illustrateurs", []))
     if st.button("Réinitialiser illustrateurs"):
-        st.session_state.illu = []
-        st.experimental_rerun()
+        selected_illustrateurs = []
+        st.session_state["illustrateurs"] = []
+        st.rerun()
+    st.session_state["illustrateurs"] = selected_illustrateurs
 
 def apply_filters(data):
     result = data.copy()
@@ -169,12 +175,12 @@ def apply_filters(data):
         result = result[result["extension_annee"].isin(selected_extensions)]
     if selected_illustrateurs:
         result = result[result["Illustrateur"].isin(selected_illustrateurs)]
-    if search_input:
-        norm_search = normalize(search_input)
+    if st.session_state.search_input:
+        norm_search = normalize(st.session_state.search_input)
         result = result[
             result["nom"].apply(normalize).str.contains(norm_search, na=False) |
             result["extension"].apply(normalize).str.contains(norm_search, na=False) |
-            result["numero"].astype(str).str.contains(search_input)
+            result["numero"].astype(str).str.contains(norm_search)
         ]
     return result
 
