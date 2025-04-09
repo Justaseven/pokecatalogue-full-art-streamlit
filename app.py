@@ -139,48 +139,42 @@ def normalize(text):
 if "search_input" not in st.session_state:
     st.session_state.search_input = ""
 
-search_input = st.sidebar.text_input("Recherche 🔎", st.session_state.search_input, key="search_box")
+search_input = st.sidebar.text_input("Recherche 🔎", value=st.session_state.search_input, key="search_box")
 all_options = df["nom"].dropna().unique().tolist() + df["extension"].dropna().unique().tolist()
 suggestions = [s[0] for s in process.extract(search_input, all_options, limit=10)] if search_input else []
 
-if suggestions:
-    selected_suggestion = st.sidebar.selectbox("Suggestions", suggestions)
-    if selected_suggestion and selected_suggestion != st.session_state.search_input:
-        st.session_state.search_input = selected_suggestion
-        st.rerun()
+selected_suggestion = st.sidebar.selectbox("Suggestions", suggestions) if suggestions else None
+
+if selected_suggestion and selected_suggestion != st.session_state.search_input:
+    st.session_state.search_input = selected_suggestion
+    st.rerun()
 
 # Filtres dynamiques
 st.sidebar.markdown("---")
 with st.sidebar.expander("🎨 Filtrer par extension"):
     extensions = sorted(df["extension_annee"].dropna().unique())
-    selected_extensions = st.multiselect("Extensions", extensions, default=st.session_state.get("extensions", []))
+    selected_extensions = st.multiselect("Extensions", extensions, default=[], key="ext_filter")
     if st.button("Réinitialiser extensions"):
-        selected_extensions = []
-        st.session_state["extensions"] = []
-        st.rerun()
-    st.session_state["extensions"] = selected_extensions
+        st.session_state.ext_filter = []
 
 with st.sidebar.expander("🖌️ Filtrer par illustrateur"):
     illustrateurs = sorted(df["Illustrateur"].dropna().unique())
-    selected_illustrateurs = st.multiselect("Illustrateurs", illustrateurs, default=st.session_state.get("illustrateurs", []))
+    selected_illustrateurs = st.multiselect("Illustrateurs", illustrateurs, default=[], key="illu_filter")
     if st.button("Réinitialiser illustrateurs"):
-        selected_illustrateurs = []
-        st.session_state["illustrateurs"] = []
-        st.rerun()
-    st.session_state["illustrateurs"] = selected_illustrateurs
+        st.session_state.illu_filter = []
 
 def apply_filters(data):
     result = data.copy()
-    if selected_extensions:
-        result = result[result["extension_annee"].isin(selected_extensions)]
-    if selected_illustrateurs:
-        result = result[result["Illustrateur"].isin(selected_illustrateurs)]
+    if st.session_state.ext_filter:
+        result = result[result["extension_annee"].isin(st.session_state.ext_filter)]
+    if st.session_state.illu_filter:
+        result = result[result["Illustrateur"].isin(st.session_state.illu_filter)]
     if st.session_state.search_input:
         norm_search = normalize(st.session_state.search_input)
         result = result[
             result["nom"].apply(normalize).str.contains(norm_search, na=False) |
             result["extension"].apply(normalize).str.contains(norm_search, na=False) |
-            result["numero"].astype(str).str.contains(norm_search)
+            result["numero"].astype(str).str.contains(st.session_state.search_input)
         ]
     return result
 
@@ -246,12 +240,12 @@ if menu == "Catalogue complet":
 
 elif menu == "🧾 Liste d’achats":
     st.subheader("🧾 Liste de souhaits")
-    wishlist_df = df_paginated[(df_paginated["souhaite"]) & (~df_paginated["possede"])]
+    wishlist_df = df_filtered[(df_filtered["souhaite"]) & (~df_filtered["possede"])]
     for i, row in wishlist_df.iterrows():
         show_card(row, i, grille=not view_mode)
 
 elif menu == "📦 Ma Collection":
     st.subheader("📦 Ma Collection")
-    owned_df = df_paginated[df_paginated["possede"]]
+    owned_df = df_filtered[df_filtered["possede"]]
     for i, row in owned_df.iterrows():
         show_card(row, i, grille=not view_mode)
