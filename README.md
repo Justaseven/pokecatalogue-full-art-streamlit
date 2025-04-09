@@ -28,11 +28,53 @@ Cette application est une interface Streamlit permettant de gérer une collectio
    ```bash
    git clone https://github.com/votre-utilisateur/catalogue-full-art-pokemon.git
    cd catalogue-full-art-pokemon
+   ```
+   
 2. Installer les dépendances :
-  ```bash
-  pip install -r requirements.txt
-
+   ```bash
+   pip install -R requirements.txt
+   ```
+   
 3. Lancer l'application :
-  ```bash
-  streamlit run app.py
+   ```bash
+   streamlit run app.py
+   ```
 
+## Structure du projet
+```bash
+.
+├── app.py                            # Code principal de l'application Streamlit
+├── catalogue_cartes_mis_a_jour.csv   # Données des cartes enrichies (image, date, illustrateur, etc.)
+├── users_cards.db                    # Base SQLite (créée automatiquement au premier lancement)
+├── requirements.txt                  # Fichier listant les dépendances Python
+└── README.md                         # Ce fichier de documentation
+```
+
+## Données incluses
+
+Le fichier CSV contient les colonnes suivantes :
+   - nom_complet
+   - url
+   - nom
+   - extension
+   - numero
+   - image_url
+   - image_status
+   - souhaitée
+   - possédée
+   - Illustrateur
+   - Date de sortie
+
+## Déploiement
+
+Cette application peut être déployée localement ou sur Streamlit Community Cloud. Pour cela :
+
+   1. Connectez votre dépôt GitHub sur Streamlit Cloud
+   2. Spécifiez app.py comme fichier principal
+   3. Ajoutez requirements.txt dans les fichiers sources
+
+Déployez !
+
+## Licence
+
+Ce projet est sous licence MIT.
