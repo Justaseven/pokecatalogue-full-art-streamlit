@@ -100,7 +100,7 @@ with st.sidebar.expander("➕ Créer un utilisateur"):
     photo = st.file_uploader("📷 Photo", type=["jpg", "jpeg", "png"])
     if st.button("Créer l'utilisateur"):
         if prenom and nom:
-photo_bytes = photo.read() if photo else None
+            photo_bytes = photo.read() if photo else None
             add_user(prenom, nom, age, photo_bytes)
             st.rerun()
         else:
