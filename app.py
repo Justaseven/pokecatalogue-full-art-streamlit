@@ -212,7 +212,7 @@ def show_card(row, idx, grille=False):
     if grille:
         with st.container():
             st.markdown(f"**{row['nom']}**", help=row["nom_complet"])
-st.image(row["image_url"] if isinstance(row["image_url"], str) and row["image_url"].startswith("http") else "https://via.placeholder.com/130x180?text=Aucune+image", width=140)
+            st.image(row["image_url"] if isinstance(row["image_url"], str) and row["image_url"].startswith("http") else "https://via.placeholder.com/130x180?text=Aucune+image", width=140)
             b1, b2 = st.columns([1, 1])
             with b1:
                 st.toggle("🌟", value=row["souhaite"], key=f"souhaite_{idx}", on_change=update_user_card,
@@ -223,7 +223,7 @@ st.image(row["image_url"] if isinstance(row["image_url"], str) and row["image_ur
     else:
         cols = st.columns([2, 3, 2, 2])
         with cols[0]:
-st.image(row["image_url"] if isinstance(row["image_url"], str) and row["image_url"].startswith("http") else "https://via.placeholder.com/130x180?text=Aucune+image", width=130)
+            st.image(row["image_url"] if isinstance(row["image_url"], str) and row["image_url"].startswith("http") else "https://via.placeholder.com/130x180?text=Aucune+image", width=130)
         with cols[1]:
             st.markdown(f"**{row['nom']}**")
             st.markdown(f"*{row['extension']}* — #{row['numero']}")
