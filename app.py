@@ -241,21 +241,17 @@ if view_mode:
     for idx, row in df_paginated.iterrows():
         show_card(row, idx, grille=False)
 else:
-    # Utiliser st.query_params pour récupérer la largeur de l'écran (si disponible)
-    width = st.query_params.get("width", [None])[0]
-    try:
-        screen_width = int(width) if width else 1200
-    except ValueError:
-        screen_width = 1200
+    # Grille responsive basée sur la largeur de l'écran
+    num_cols = 2  # par défaut pour mobile
 
-    # Déterminer dynamiquement le nombre de colonnes en fonction de la largeur
-    cards_per_row = max(1, screen_width // 220)  # 220 px par carte estimée
-    rows = (len(df_paginated) + cards_per_row - 1) // cards_per_row
+    if st.columns(4)[-1].width > 300:  # un petit hack pour Streamlit large screen
+        num_cols = 4
+    elif st.columns(3)[-1].width > 300:
+        num_cols = 3
 
-    for row_idx in range(rows):
-        cols = st.columns(cards_per_row)
-        for col_idx in range(cards_per_row):
-            card_idx = row_idx * cards_per_row + col_idx
-            if card_idx >= len(df_paginated):
-                break
-            show_card(df_paginated.iloc[card_idx], card_idx, grille=True)
+    rows = [df_paginated.iloc[i:i + num_cols] for i in range(0, len(df_paginated), num_cols)]
+    for row_chunk in rows:
+        cols = st.columns(len(row_chunk))
+        for col, (_, row) in zip(cols, row_chunk.iterrows()):
+            with col:
+                show_card(row, row.name, grille=True)
