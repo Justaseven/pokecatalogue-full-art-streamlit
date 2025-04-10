@@ -1,15 +1,16 @@
+# Chargement du code complet avec la fonctionnalité de filtres cliquables sur extension et illustrateur
 import streamlit as st
 import pandas as pd
 import sqlite3
 from io import BytesIO
 import unicodedata
 from rapidfuzz import process
- 
+
 CSV_DATA = "catalogue_cartes_mis_a_jour.csv"
 DB_PATH = "users_cards.db"
- 
+
 st.set_page_config(page_title="Catalogue Full Art Pokémon", layout="wide")
- 
+
 # ------------------ INITIALISATION DB ------------------
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -34,16 +35,16 @@ def init_db():
     """)
     conn.commit()
     conn.close()
- 
+
 init_db()
- 
+
 # ------------------ FONCTIONS DB ------------------
 def get_users():
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query("SELECT * FROM users", conn)
     conn.close()
     return df
- 
+
 def add_user(prenom, nom, age, photo_bytes):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -51,7 +52,7 @@ def add_user(prenom, nom, age, photo_bytes):
               (prenom, nom, age, photo_bytes))
     conn.commit()
     conn.close()
- 
+
 def delete_user(user_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -59,13 +60,13 @@ def delete_user(user_id):
     c.execute("DELETE FROM user_cards WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()
- 
+
 def get_user_cards(user_id):
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query("SELECT * FROM user_cards WHERE user_id = ?", conn, params=(user_id,))
     conn.close()
     return df
- 
+
 def update_user_card(user_id, nom_complet, souhaite, possede):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -78,7 +79,7 @@ def update_user_card(user_id, nom_complet, souhaite, possede):
     """, (user_id, nom_complet, souhaite, possede))
     conn.commit()
     conn.close()
- 
+
 @st.cache_data
 def load_cards():
     df = pd.read_csv(CSV_DATA)
@@ -86,13 +87,13 @@ def load_cards():
     df["année"] = df["Date de sortie"].str.extract(r"(\d{4})", expand=False)
     df["extension_annee"] = df["année"].fillna("") + " - " + df["extension"]
     return df
- 
+
 df_cards = load_cards()
- 
+
 # ------------------ UTILISATEUR ACTIF ------------------
 st.sidebar.subheader("👤 Utilisateur actif")
 users = get_users()
- 
+
 with st.sidebar.expander("➕ Créer un utilisateur"):
     prenom = st.text_input("Prénom")
     nom = st.text_input("Nom")
@@ -105,73 +106,80 @@ with st.sidebar.expander("➕ Créer un utilisateur"):
             st.rerun()
         else:
             st.warning("Prénom et nom requis")
- 
+
 if users.empty:
     st.warning("Aucun utilisateur disponible. Créez un utilisateur.")
     st.stop()
- 
+
 user_options = [f"{row['prenom']} {row['nom']}" for _, row in users.iterrows()]
 selected_name = st.sidebar.selectbox("Choisir un utilisateur", user_options)
 selected_index = user_options.index(selected_name)
 active_user = users.iloc[selected_index]
 active_user_id = int(active_user["id"])
- 
+
 if active_user["photo"]:
     st.sidebar.image(BytesIO(active_user["photo"]), width=120)
- 
+
 with st.sidebar.expander("⚙️ Gérer utilisateur"):
     if st.button("❌ Supprimer cet utilisateur"):
         delete_user(active_user_id)
         st.rerun()
- 
+
 # ------------------ CHARGEMENT DES DONNÉES ------------------
 df_user_cards = get_user_cards(active_user_id)
 df = df_cards.copy()
 df["souhaite"] = df["nom_complet"].isin(df_user_cards[df_user_cards["souhaite"] == 1]["nom_complet"])
 df["possede"] = df["nom_complet"].isin(df_user_cards[df_user_cards["possede"] == 1]["nom_complet"])
- 
+
 # ------------------ MENU ET RECHERCHE ------------------
 menu = st.sidebar.radio("Vue", ["Catalogue complet", "🧾 Liste d’achats", "📦 Ma Collection"])
- 
+
 def normalize(text):
     return unicodedata.normalize("NFKD", str(text)).encode("ASCII", "ignore").decode().lower()
- 
+
 if "search_input" not in st.session_state:
     st.session_state.search_input = ""
- 
+
 search_input = st.sidebar.text_input("Recherche 🔎", st.session_state.search_input, key="search_box")
- 
+
 all_options = df["nom"].dropna().unique().tolist() + df["extension"].dropna().unique().tolist()
 suggestions = [s[0] for s in process.extract(search_input, all_options, limit=10)] if search_input else []
- 
+
 if suggestions:
     selected_suggestion = st.sidebar.selectbox("Suggestions", suggestions)
     if selected_suggestion and selected_suggestion != st.session_state.search_input:
         st.session_state.search_input = selected_suggestion
         search_input = selected_suggestion
- 
-# Si le champ est vidé, on réinitialise la recherche
+
 if search_input.strip() == "":
     st.session_state.search_input = ""
     search_input = ""
- 
+
 # ------------------ FILTRES EXTENSION & ILLUSTRATEUR ------------------
+if "selected_extensions" not in st.session_state:
+    st.session_state.selected_extensions = []
+
+if "selected_illustrateurs" not in st.session_state:
+    st.session_state.selected_illustrateurs = []
+
 st.sidebar.markdown("---")
 with st.sidebar.expander("🎨 Filtrer par extension"):
     extensions = sorted(df["extension_annee"].dropna().unique())
-    selected_extensions = st.multiselect("Extensions", extensions, default=[])
- 
+    selected_extensions = st.multiselect("Extensions", extensions, default=st.session_state.selected_extensions)
+    st.session_state.selected_extensions = selected_extensions
+
 with st.sidebar.expander("🖌️ Filtrer par illustrateur"):
     illustrateurs = sorted(df["Illustrateur"].dropna().unique())
-    selected_illustrateurs = st.multiselect("Illustrateurs", illustrateurs, default=[])
- 
+    selected_illustrateurs = st.multiselect("Illustrateurs", illustrateurs, default=st.session_state.selected_illustrateurs)
+    st.session_state.selected_illustrateurs = selected_illustrateurs
+
 # ------------------ FILTRAGE ------------------
 def apply_filters(data):
     result = data.copy()
-    if selected_extensions:
-        result = result[result["extension_annee"].isin(selected_extensions)]
-    if selected_illustrateurs:
-        result = result[result["Illustrateur"].isin(selected_illustrateurs)]
+    if st.session_state.selected_extensions:
+        result = result[result["extension_annee"].isin(st.session_state.selected_extensions)]
+    if st.session_state.selected_illustrateurs:
+        result = result[result["Illustrateur"].isin(st.session_state.selected_illustrateurs)]
     if search_input.strip():
         norm_search = normalize(search_input)
         result = result[
@@ -180,15 +188,14 @@ def apply_filters(data):
             result["numero"].astype(str).str.contains(search_input)
         ]
     return result
- 
+
 df_filtered = apply_filters(df)
- 
-# Vue spécifique selon le menu
+
 if menu == "🧾 Liste d’achats":
     df_filtered = df_filtered[(df_filtered["souhaite"]) & (~df_filtered["possede"])]
 elif menu == "📦 Ma Collection":
     df_filtered = df_filtered[df_filtered["possede"]]
- 
+
 # ------------------ VUE + PAGINATION ------------------
 col_left, col_right = st.columns([8, 2])
 with col_left:
@@ -201,12 +208,12 @@ with col_right:
         label_visibility="collapsed",
     )
     view_mode = selected_view == "Liste"
- 
+
 CARDS_PER_PAGE = 12
 total_pages = max(1, (len(df_filtered) - 1) // CARDS_PER_PAGE + 1)
 page = st.number_input("Page", min_value=1, max_value=total_pages, value=1, step=1)
 df_paginated = df_filtered.iloc[(page - 1) * CARDS_PER_PAGE : page * CARDS_PER_PAGE]
- 
+
 # ------------------ AFFICHAGE DES CARTES ------------------
 def show_card(row, idx, grille=False):
     if grille:
@@ -226,8 +233,14 @@ def show_card(row, idx, grille=False):
             st.image(row["image_url"] if isinstance(row["image_url"], str) and row["image_url"].startswith("http") else "https://via.placeholder.com/130x180?text=Aucune+image", width=130)
         with cols[1]:
             st.markdown(f"**{row['nom']}**")
-            st.markdown(f"*{row['extension']}* — #{row['numero']}")
-            st.markdown(f"🖌️ *{row['Illustrateur']}*")
+            if st.button(row['extension'], key=f"ext_{idx}"):
+                if row["extension_annee"] not in st.session_state.selected_extensions:
+                    st.session_state.selected_extensions.append(row["extension_annee"])
+                    st.rerun()
+            if st.button(row['Illustrateur'], key=f"ill_{idx}"):
+                if row["Illustrateur"] not in st.session_state.selected_illustrateurs:
+                    st.session_state.selected_illustrateurs.append(row["Illustrateur"])
+                    st.rerun()
             st.markdown(f"📅 {row['Date de sortie']}")
         with cols[2]:
             st.toggle("🌟 Je la veux", value=row["souhaite"], key=f"souhaite_{idx}", on_change=update_user_card,
@@ -235,28 +248,15 @@ def show_card(row, idx, grille=False):
         with cols[3]:
             st.toggle("📦 Je l'ai", value=row["possede"], key=f"possede_{idx}", on_change=update_user_card,
                       args=(active_user_id, row["nom_complet"], int(row["souhaite"]), int(not row["possede"])))
- 
+
 # ------------------ AFFICHAGE PAR VUE ------------------
-
-# Détection mobile (optionnelle avec ?mobile=1 dans l'URL)
-params = st.query_params
-is_mobile = params.get("mobile", ["0"])[0] == "1"
-st.session_state["is_mobile"] = is_mobile
-
-# Fonction pour définir le nombre de colonnes (responsive)
-def get_num_columns():
-    return 2 if st.session_state["is_mobile"] else 4
-
 if view_mode:
     for idx, row in df_paginated.iterrows():
         show_card(row, idx, grille=False)
 else:
-    num_cols = get_num_columns()
-    rows = [df_paginated.iloc[i:i + num_cols] for i in range(0, len(df_paginated), num_cols)]
-    for row_chunk in rows:
-        cols = st.columns(len(row_chunk))
-        for col, (_, row) in zip(cols, row_chunk.iterrows()):
-            with col:
-                show_card(row, row.name, grille=True)
-
-
+    from math import ceil
+    num_cols = 2 if st.session_state.get("is_mobile") else 4
+    cols = st.columns(num_cols)
+    for i, (_, row) in enumerate(df_paginated.iterrows()):
+        with cols[i % num_cols]:
+            show_card(row, i, grille=True)
