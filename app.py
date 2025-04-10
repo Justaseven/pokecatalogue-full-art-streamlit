@@ -237,23 +237,26 @@ def show_card(row, idx, grille=False):
                       args=(active_user_id, row["nom_complet"], int(row["souhaite"]), int(not row["possede"])))
  
 # ------------------ AFFICHAGE PAR VUE ------------------
+
+# Détection mobile (optionnelle avec ?mobile=1 dans l'URL)
+params = st.query_params
+is_mobile = params.get("mobile", ["0"])[0] == "1"
+st.session_state["is_mobile"] = is_mobile
+
+# Fonction pour définir le nombre de colonnes (responsive)
+def get_num_columns():
+    return 2 if st.session_state["is_mobile"] else 4
+
 if view_mode:
     for idx, row in df_paginated.iterrows():
         show_card(row, idx, grille=False)
 else:
-     params = st.query_params
-     is_mobile = params.get("mobile", ["0"])[0] == "1"
-     st.session_state["is_mobile"] = is_mobile
-
-     def get_num_columns():
-         return 2 if is_mobile else 4
-
     num_cols = get_num_columns()
     rows = [df_paginated.iloc[i:i + num_cols] for i in range(0, len(df_paginated), num_cols)]
-
     for row_chunk in rows:
         cols = st.columns(len(row_chunk))
         for col, (_, row) in zip(cols, row_chunk.iterrows()):
             with col:
                 show_card(row, row.name, grille=True)
+
 
