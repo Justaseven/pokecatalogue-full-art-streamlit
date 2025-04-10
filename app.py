@@ -241,16 +241,15 @@ if view_mode:
     for idx, row in df_paginated.iterrows():
         show_card(row, idx, grille=False)
 else:
-    # Estimation du nombre de colonnes en fonction de la largeur de l'écran
-    import streamlit.components.v1 as components
-    width = st.experimental_get_query_params().get("width", [None])[0]
+    # Utiliser st.query_params pour récupérer la largeur de l'écran (si disponible)
+    width = st.query_params.get("width", [None])[0]
     try:
         screen_width = int(width) if width else 1200
     except ValueError:
         screen_width = 1200
 
-    # Environ 200 px par carte (140 pour image + marges/paddings)
-    cards_per_row = max(1, screen_width // 200)
+    # Déterminer dynamiquement le nombre de colonnes en fonction de la largeur
+    cards_per_row = max(1, screen_width // 220)  # 220 px par carte estimée
     rows = (len(df_paginated) + cards_per_row - 1) // cards_per_row
 
     for row_idx in range(rows):
