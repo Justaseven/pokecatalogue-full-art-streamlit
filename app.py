@@ -241,7 +241,22 @@ if view_mode:
     for idx, row in df_paginated.iterrows():
         show_card(row, idx, grille=False)
 else:
-    grid_cols = st.columns(4)
-    for i, (_, row) in enumerate(df_paginated.iterrows()):
-        with grid_cols[i % 4]:
-            show_card(row, i, grille=True)
+    # Estimation du nombre de colonnes en fonction de la largeur de l'écran
+    import streamlit.components.v1 as components
+    width = st.experimental_get_query_params().get("width", [None])[0]
+    try:
+        screen_width = int(width) if width else 1200
+    except ValueError:
+        screen_width = 1200
+
+    # Environ 200 px par carte (140 pour image + marges/paddings)
+    cards_per_row = max(1, screen_width // 200)
+    rows = (len(df_paginated) + cards_per_row - 1) // cards_per_row
+
+    for row_idx in range(rows):
+        cols = st.columns(cards_per_row)
+        for col_idx in range(cards_per_row):
+            card_idx = row_idx * cards_per_row + col_idx
+            if card_idx >= len(df_paginated):
+                break
+            show_card(df_paginated.iloc[card_idx], card_idx, grille=True)
