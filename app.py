@@ -246,10 +246,11 @@ else:
      st.session_state["is_mobile"] = is_mobile
 
      def get_num_columns():
-      return 2 if is_mobile else 4
+         return 2 if is_mobile else 4
 
     num_cols = get_num_columns()
     rows = [df_paginated.iloc[i:i + num_cols] for i in range(0, len(df_paginated), num_cols)]
+
     for row_chunk in rows:
         cols = st.columns(len(row_chunk))
         for col, (_, row) in zip(cols, row_chunk.iterrows()):
