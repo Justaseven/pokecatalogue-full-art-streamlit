@@ -241,17 +241,18 @@ if view_mode:
     for idx, row in df_paginated.iterrows():
         show_card(row, idx, grille=False)
 else:
-    # Grille responsive basée sur la largeur de l'écran
-    num_cols = 2  # par défaut pour mobile
+     params = st.query_params
+     is_mobile = params.get("mobile", ["0"])[0] == "1"
+     st.session_state["is_mobile"] = is_mobile
 
-    if st.columns(4)[-1].width > 300:  # un petit hack pour Streamlit large screen
-        num_cols = 4
-    elif st.columns(3)[-1].width > 300:
-        num_cols = 3
+     def get_num_columns():
+      return 2 if is_mobile else 4
 
+    num_cols = get_num_columns()
     rows = [df_paginated.iloc[i:i + num_cols] for i in range(0, len(df_paginated), num_cols)]
     for row_chunk in rows:
         cols = st.columns(len(row_chunk))
         for col, (_, row) in zip(cols, row_chunk.iterrows()):
             with col:
                 show_card(row, row.name, grille=True)
+
