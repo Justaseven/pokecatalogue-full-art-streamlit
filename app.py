@@ -154,6 +154,7 @@ if search_input.strip() == "":
     st.session_state.search_input = ""
     search_input = ""
 
+# ------------------ FILTRES EXTENSION & ILLUSTRATEUR ------------------
 if "selected_extensions" not in st.session_state:
     st.session_state.selected_extensions = []
 
@@ -170,27 +171,6 @@ with st.sidebar.expander("🖌️ Filtrer par illustrateur"):
     illustrateurs = sorted(df["Illustrateur"].dropna().unique())
     selected_illustrateurs = st.multiselect("Illustrateurs", illustrateurs, default=st.session_state.selected_illustrateurs)
     st.session_state.selected_illustrateurs = selected_illustrateurs
-
-# ------------------ TRI SCÈNE / COULEUR ------------------
-if "sort_fields" not in st.session_state:
-    st.session_state.sort_fields = []
-
-if menu == "📦 Ma Collection":
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🔀 Trier la collection")
-
-    options_label_map = {
-        "type_visuel": "Scène",
-        "couleur_simplifiée": "Couleur d'ambiance"
-    }
-
-    selected_sort_fields = st.sidebar.multiselect(
-        "Choisir l'ordre de tri",
-        options=list(options_label_map.keys()),
-        format_func=lambda x: options_label_map[x],
-        default=st.session_state.sort_fields
-    )
-    st.session_state.sort_fields = selected_sort_fields
 
 # ------------------ FILTRAGE ------------------
 def apply_filters(data):
@@ -210,12 +190,23 @@ def apply_filters(data):
 
 df_filtered = apply_filters(df)
 
-if menu == "🧾 Liste d’achats":
-    df_filtered = df_filtered[(df_filtered["souhaite"]) & (~df_filtered["possede"])]
-elif menu == "📦 Ma Collection":
+# ------------------ TRI COLLECTION (Scène / Couleur) ------------------
+if menu == "📦 Ma Collection":
     df_filtered = df_filtered[df_filtered["possede"]]
-    if st.session_state.sort_fields:
-        df_filtered = df_filtered.sort_values(by=st.session_state.sort_fields)
+
+    tri_options = {
+        "Scène": "type_visuel",
+        "Couleur d'ambiance": "couleur_simplifiée"
+    }
+
+    selected_order = st.multiselect("Trier Ma Collection par :", list(tri_options.keys()), default=[])
+
+    sort_fields = [tri_options[k] for k in selected_order if tri_options[k] in df_filtered.columns]
+    if sort_fields:
+        df_filtered = df_filtered.sort_values(by=sort_fields)
+
+elif menu == "🧾 Liste d’achats":
+    df_filtered = df_filtered[(df_filtered["souhaite"]) & (~df_filtered["possede"])]
 
 # ------------------ VUE + PAGINATION ------------------
 col_left, col_right = st.columns([8, 2])
