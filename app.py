@@ -1,4 +1,3 @@
-# Chargement du code complet avec la fonctionnalité de filtres cliquables sur extension et illustrateur
 import streamlit as st
 import pandas as pd
 import sqlite3
@@ -83,9 +82,7 @@ def update_user_card(user_id, nom_complet, souhaite, possede):
 @st.cache_data
 def load_cards():
     df = pd.read_csv(CSV_DATA)
-    df["extension_annee"] = df["extension"]
-    df["année"] = df["Date de sortie"].str.extract(r"(\d{4})", expand=False)
-    df["extension_annee"] = df["année"].fillna("") + " - " + df["extension"]
+    df["extension_annee"] = df["Date de sortie"].str.extract(r"(\d{4})", expand=False).fillna("") + " - " + df["extension"]
     return df
 
 df_cards = load_cards()
@@ -141,7 +138,6 @@ if "search_input" not in st.session_state:
     st.session_state.search_input = ""
 
 search_input = st.sidebar.text_input("Recherche 🔎", st.session_state.search_input, key="search_box")
-
 all_options = df["nom"].dropna().unique().tolist() + df["extension"].dropna().unique().tolist()
 suggestions = [s[0] for s in process.extract(search_input, all_options, limit=10)] if search_input else []
 
@@ -155,10 +151,9 @@ if search_input.strip() == "":
     st.session_state.search_input = ""
     search_input = ""
 
-# ------------------ FILTRES EXTENSION & ILLUSTRATEUR ------------------
+# ------------------ FILTRES ------------------
 if "selected_extensions" not in st.session_state:
     st.session_state.selected_extensions = []
-
 if "selected_illustrateurs" not in st.session_state:
     st.session_state.selected_illustrateurs = []
 
@@ -173,7 +168,15 @@ with st.sidebar.expander("🖌️ Filtrer par illustrateur"):
     selected_illustrateurs = st.multiselect("Illustrateurs", illustrateurs, default=st.session_state.selected_illustrateurs)
     st.session_state.selected_illustrateurs = selected_illustrateurs
 
-# ------------------ FILTRAGE ------------------
+# Filtres spécifiques à Ma Collection
+sort_order = None
+if menu == "📦 Ma Collection":
+    st.sidebar.markdown("---")
+    with st.sidebar.expander("🎯 Tri personnalisé (Ma Collection)"):
+        sort_by = st.radio("Trier par", ["Aucun", "Couleur → Type", "Type → Couleur"])
+        sort_order = sort_by
+
+# ------------------ APPLICATION DES FILTRES ------------------
 def apply_filters(data):
     result = data.copy()
     if st.session_state.selected_extensions:
@@ -195,6 +198,10 @@ if menu == "🧾 Liste d’achats":
     df_filtered = df_filtered[(df_filtered["souhaite"]) & (~df_filtered["possede"])]
 elif menu == "📦 Ma Collection":
     df_filtered = df_filtered[df_filtered["possede"]]
+    if sort_order == "Couleur → Type":
+        df_filtered = df_filtered.sort_values(by=["couleur_dominante", "type_visuel"])
+    elif sort_order == "Type → Couleur":
+        df_filtered = df_filtered.sort_values(by=["type_visuel", "couleur_dominante"])
 
 # ------------------ VUE + PAGINATION ------------------
 col_left, col_right = st.columns([8, 2])
@@ -250,13 +257,14 @@ def show_card(row, idx, grille=False):
                       args=(active_user_id, row["nom_complet"], int(row["souhaite"]), int(not row["possede"])))
 
 # ------------------ AFFICHAGE PAR VUE ------------------
+from math import ceil
+num_cols = 2 if st.session_state.get("is_mobile") else 4
+cols = st.columns(num_cols)
+
 if view_mode:
     for idx, row in df_paginated.iterrows():
         show_card(row, idx, grille=False)
 else:
-    from math import ceil
-    num_cols = 2 if st.session_state.get("is_mobile") else 4
-    cols = st.columns(num_cols)
     for i, (_, row) in enumerate(df_paginated.iterrows()):
         with cols[i % num_cols]:
             show_card(row, i, grille=True)
