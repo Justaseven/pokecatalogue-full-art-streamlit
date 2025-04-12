@@ -130,31 +130,26 @@ df = df_cards.copy()
 df["souhaite"] = df["nom_complet"].isin(df_user_cards[df_user_cards["souhaite"] == 1]["nom_complet"])
 df["possede"] = df["nom_complet"].isin(df_user_cards[df_user_cards["possede"] == 1]["nom_complet"])
 
-# ------------------ MENU ET RECHERCHE ------------------
-menu = st.sidebar.radio("Vue", ["Catalogue complet", "🧾 Liste d’achats", "📦 Ma Collection"])
-
+# ------------------ RECHERCHE & SUGGESTIONS ------------------
 def normalize(text):
     return unicodedata.normalize("NFKD", str(text)).encode("ASCII", "ignore").decode().lower()
 
-if "search_input" not in st.session_state:
-    st.session_state.search_input = ""
+if "search_query" not in st.session_state:
+    st.session_state.search_query = ""
 
-search_input = st.sidebar.text_input("Recherche 🔎", st.session_state.search_input, key="search_box")
+all_text_options = df["nom"].dropna().tolist() + df["extension"].dropna().tolist() + df["numero"].dropna().astype(str).tolist()
+filtered_suggestions = [s[0] for s in process.extract(st.session_state.search_query, all_text_options, limit=10)] if st.session_state.search_query else []
 
-all_options = df["nom"].dropna().unique().tolist() + df["extension"].dropna().unique().tolist()
-suggestions = [s[0] for s in process.extract(search_input, all_options, limit=10)] if search_input else []
+st.sidebar.markdown("Recherche par nom, extension ou numéro")
+search_query = st.sidebar.text_input("Recherche 🔎", value=st.session_state.search_query, key="search_field")
 
-if suggestions:
-    selected_suggestion = st.sidebar.selectbox("Suggestions", suggestions)
-    if selected_suggestion and selected_suggestion != st.session_state.search_input:
-        st.session_state.search_input = selected_suggestion
-        search_input = selected_suggestion
+if search_query != st.session_state.search_query:
+    st.session_state.search_query = search_query
 
-if search_input.strip() == "":
-    st.session_state.search_input = ""
-    search_input = ""
+# ------------------ MENU ------------------
+menu = st.sidebar.radio("Vue", ["Catalogue complet", "🧾 Liste d’achats", "📦 Ma Collection"])
 
-# ------------------ FILTRES EXTENSION & ILLUSTRATEUR ------------------
+# ------------------ FILTRES ------------------
 if "selected_extensions" not in st.session_state:
     st.session_state.selected_extensions = []
 
@@ -179,34 +174,22 @@ def apply_filters(data):
         result = result[result["extension_annee"].isin(st.session_state.selected_extensions)]
     if st.session_state.selected_illustrateurs:
         result = result[result["Illustrateur"].isin(st.session_state.selected_illustrateurs)]
-    if search_input.strip():
-        norm_search = normalize(search_input)
+    if st.session_state.search_query.strip():
+        norm = normalize(st.session_state.search_query)
         result = result[
-            result["nom"].apply(normalize).str.contains(norm_search, na=False) |
-            result["extension"].apply(normalize).str.contains(norm_search, na=False) |
-            result["numero"].astype(str).str.contains(search_input)
+            result["nom"].apply(normalize).str.contains(norm, na=False) |
+            result["extension"].apply(normalize).str.contains(norm, na=False) |
+            result["numero"].astype(str).str.contains(norm)
         ]
     return result
 
 df_filtered = apply_filters(df)
 
-# ------------------ TRI COLLECTION (Scène / Couleur) ------------------
-if menu == "📦 Ma Collection":
-    df_filtered = df_filtered[df_filtered["possede"]]
-
-    tri_options = {
-        "Scène": "type_visuel",
-        "Couleur d'ambiance": "couleur_simplifiée"
-    }
-
-    selected_order = st.multiselect("Trier Ma Collection par :", list(tri_options.keys()), default=[])
-
-    sort_fields = [tri_options[k] for k in selected_order if tri_options[k] in df_filtered.columns]
-    if sort_fields:
-        df_filtered = df_filtered.sort_values(by=sort_fields)
-
-elif menu == "🧾 Liste d’achats":
+# ------------------ VUE SPÉCIFIQUE ------------------
+if menu == "🧾 Liste d’achats":
     df_filtered = df_filtered[(df_filtered["souhaite"]) & (~df_filtered["possede"])]
+elif menu == "📦 Ma Collection":
+    df_filtered = df_filtered[df_filtered["possede"]]
 
 # ------------------ VUE + PAGINATION ------------------
 col_left, col_right = st.columns([8, 2])
@@ -226,7 +209,7 @@ total_pages = max(1, (len(df_filtered) - 1) // CARDS_PER_PAGE + 1)
 page = st.number_input("Page", min_value=1, max_value=total_pages, value=1, step=1)
 df_paginated = df_filtered.iloc[(page - 1) * CARDS_PER_PAGE : page * CARDS_PER_PAGE]
 
-# ------------------ AFFICHAGE DES CARTES ------------------
+# ------------------ AFFICHAGE ------------------
 def show_card(row, idx, grille=False):
     if grille:
         with st.container():
@@ -261,7 +244,6 @@ def show_card(row, idx, grille=False):
             st.toggle("📦 Je l'ai", value=row["possede"], key=f"possede_{idx}", on_change=update_user_card,
                       args=(active_user_id, row["nom_complet"], int(row["souhaite"]), int(not row["possede"])))
 
-# ------------------ AFFICHAGE PAR VUE ------------------
 if view_mode:
     for idx, row in df_paginated.iterrows():
         show_card(row, idx, grille=False)
