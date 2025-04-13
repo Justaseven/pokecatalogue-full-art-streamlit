@@ -1,5 +1,11 @@
-streamlit>=1.30.0
-pandas>=2.0.0
-rapidfuzz>=3.0.0
-unicodedata2; python_version < "3.8"
-streamlit-js-eval
+streamlit
+pandas
+numpy
+Pillow
+requests
+scikit-learn
+tqdm
+rapidfuzz
+clip-by-openai
+torch
+streamlit-javascript
