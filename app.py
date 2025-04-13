@@ -5,7 +5,7 @@ from io import BytesIO
 import unicodedata
 from rapidfuzz import process, fuzz
 
-CSV_DATA = "catalogue_cartes_mis_a_jour_avec_categories.csv"
+CSV_DATA = "catalogue_cartes_mis_a_jour.csv"
 DB_PATH = "users_cards.db"
 
 st.set_page_config(page_title="Catalogue Full Art Pokémon", layout="wide")
