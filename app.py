@@ -3,8 +3,7 @@ import pandas as pd
 import sqlite3
 from io import BytesIO
 import unicodedata
-from rapidfuzz import process
-import math
+from rapidfuzz import process, fuzz
 
 CSV_DATA = "catalogue_cartes_mis_a_jour.csv"
 DB_PATH = "users_cards.db"
@@ -131,52 +130,47 @@ df = df_cards.copy()
 df["souhaite"] = df["nom_complet"].isin(df_user_cards[df_user_cards["souhaite"] == 1]["nom_complet"])
 df["possede"] = df["nom_complet"].isin(df_user_cards[df_user_cards["possede"] == 1]["nom_complet"])
 
-# ------------------ RECHERCHE ------------------
-def normalize(text):
-    return unicodedata.normalize("NFKD", str(text)).encode("ASCII", "ignore").decode().lower()
+# ------------------ RECHERCHE APPROXIMATIVE ------------------
+search_data = df["nom"].fillna('').tolist() + df["extension"].fillna('').tolist() + df["numero"].astype(str).tolist()
+query = st.selectbox("Recherche (nom, extension, numéro)", [""] + search_data, key="fuzzy_search")
 
-search_space = df["nom"].dropna().unique().tolist() + \
-               df["extension"].dropna().unique().tolist() + \
-               df["numero"].dropna().astype(str).unique().tolist()
-
-if "search_query" not in st.session_state:
-    st.session_state.search_query = ""
-
-search_input = st.selectbox("Recherche approximative (nom, extension ou numéro)", [""] + sorted(search_space), index=0)
-
-if search_input:
-    match = process.extractOne(search_input, search_space, scorer=process.fuzz.WRatio)
+search_query = ""
+if query:
+    match = process.extractOne(query, search_data, scorer=fuzz.WRatio)
     if match:
-        st.session_state.search_query = match[0]
-else:
-    st.session_state.search_query = ""
-
-search_query = st.session_state.search_query
+        search_query = match[0]
 
 # ------------------ MENU ------------------
 menu = st.sidebar.radio("Vue", ["Catalogue complet", "🧾 Liste d’achats", "📦 Ma Collection"])
 
 # ------------------ FILTRES ------------------
 st.sidebar.markdown("---")
-selected_extensions = st.sidebar.multiselect("Extensions", sorted(df["extension_annee"].dropna().unique()))
-selected_illustrateurs = st.sidebar.multiselect("Illustrateurs", sorted(df["Illustrateur"].dropna().unique()))
+extensions = sorted(df["extension_annee"].dropna().unique())
+selected_extensions = st.sidebar.multiselect("Extensions", extensions)
 
-# Spécifique à Ma Collection
-sort_fields = []
+illustrateurs = sorted(df["Illustrateur"].dropna().unique())
+selected_illustrateurs = st.sidebar.multiselect("Illustrateurs", illustrateurs)
+
+# ------------------ TRI COLLECTION (si actif) ------------------
 selected_sort_fields = []
-
 if menu == "📦 Ma Collection":
-    st.sidebar.markdown("## 🔀 Tri personnalisé")
+    st.sidebar.markdown("---")
     selected_sort_fields = st.sidebar.multiselect(
-        "Ordre de tri", ["Scène", "Couleur d'ambiance"], default=[]
+        "Trier par",
+        ["Scène", "Couleur d'ambiance"],
+        default=[]
     )
-    mapping = {
-        "Scène": "type_visuel",
-        "Couleur d'ambiance": "couleur_simplifiée"
-    }
-    sort_fields = [mapping[f] for f in selected_sort_fields if f in mapping]
+    sort_order = []
+    for field in selected_sort_fields:
+        if field == "Scène":
+            sort_order.append("type_visuel")
+        elif field == "Couleur d'ambiance":
+            sort_order.append("couleur_simplifiée")
 
 # ------------------ FILTRAGE ------------------
+def normalize(text):
+    return unicodedata.normalize("NFKD", str(text)).encode("ASCII", "ignore").decode().lower()
+
 def apply_filters(data):
     result = data.copy()
     if selected_extensions:
@@ -198,12 +192,12 @@ if menu == "🧾 Liste d’achats":
     df_filtered = df_filtered[(df_filtered["souhaite"]) & (~df_filtered["possede"])]
 elif menu == "📦 Ma Collection":
     df_filtered = df_filtered[df_filtered["possede"]]
-    if sort_fields:
-        df_filtered = df_filtered.sort_values(by=sort_fields)
+    if sort_order:
+        df_filtered = df_filtered.sort_values(by=sort_order)
 
 # ------------------ PAGINATION ------------------
 CARDS_PER_PAGE = 12
-total_pages = max(1, math.ceil(len(df_filtered) / CARDS_PER_PAGE))
+total_pages = max(1, (len(df_filtered) - 1) // CARDS_PER_PAGE + 1)
 page = st.number_input("Page", min_value=1, max_value=total_pages, value=1, step=1)
 df_paginated = df_filtered.iloc[(page - 1) * CARDS_PER_PAGE : page * CARDS_PER_PAGE]
 
@@ -225,6 +219,7 @@ def show_card(row, idx, grille=False):
         with st.container():
             st.markdown(f"**{row['nom']}**", help=row["nom_complet"])
             st.image(row["image_url"], width=140)
+            st.caption(f"{row.get('type_visuel', '')} | {row.get('couleur_simplifiée', '')}")
             b1, b2 = st.columns([1, 1])
             with b1:
                 st.toggle("🌟", value=row["souhaite"], key=f"souhaite_{idx}", on_change=update_user_card,
@@ -252,8 +247,13 @@ if view_mode:
     for idx, row in df_paginated.iterrows():
         show_card(row, idx, grille=False)
 else:
-    num_cols = 2 if st.runtime.scriptrunner.script_run_context.get_script_run_ctx().user_info.device == "mobile" else 4
-    cols = st.columns(num_cols)
+    import streamlit.components.v1 as components
+    import streamlit_js_eval
+
+    # Détection dynamique du viewport
+    width = streamlit_js_eval.get_page_info().get("clientWidth", 1200)
+    num_cols = 4 if width > 900 else 3 if width > 600 else 2
+    grid_cols = st.columns(num_cols)
     for i, (_, row) in enumerate(df_paginated.iterrows()):
-        with cols[i % num_cols]:
+        with grid_cols[i % num_cols]:
             show_card(row, i, grille=True)
