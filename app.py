@@ -4,6 +4,7 @@ import sqlite3
 from io import BytesIO
 import unicodedata
 from rapidfuzz import process
+from streamlit_js_eval import streamlit_js_eval
 
 CSV_DATA = "catalogue_cartes_mis_a_jour.csv"
 DB_PATH = "users_cards.db"
@@ -130,50 +131,56 @@ df = df_cards.copy()
 df["souhaite"] = df["nom_complet"].isin(df_user_cards[df_user_cards["souhaite"] == 1]["nom_complet"])
 df["possede"] = df["nom_complet"].isin(df_user_cards[df_user_cards["possede"] == 1]["nom_complet"])
 
-# ------------------ RECHERCHE AVEC AUTOCOMPLÉTION ------------------
-search_space = df["nom"].dropna().unique().tolist() + \
-               df["extension"].dropna().unique().tolist() + \
-               df["numero"].dropna().astype(str).unique().tolist()
-
-if "search_query" not in st.session_state:
-    st.session_state.search_query = ""
-
-search_input = st.selectbox("Recherche approximative", [""] + search_space, index=0, key="search_autocomplete")
-
-if search_input:
-    st.session_state.search_query = process.extractOne(search_input, search_space)[0]
-
-search_query = st.session_state.search_query
+# ------------------ DÉTECTION DU VIEWPORT ------------------
+width_info = streamlit_js_eval(js_expressions="window.innerWidth", key="viewport")
+viewport_width = width_info or 1200  # fallback pour desktop
 
 # ------------------ MENU ------------------
 menu = st.sidebar.radio("Vue", ["Catalogue complet", "🧾 Liste d’achats", "📦 Ma Collection"])
 
-# ------------------ FILTRES ------------------
-st.sidebar.markdown("---")
-extensions = sorted(df["extension_annee"].dropna().unique())
-selected_extensions = st.sidebar.multiselect("Extensions", extensions)
-
-illustrateurs = sorted(df["Illustrateur"].dropna().unique())
-selected_illustrateurs = st.sidebar.multiselect("Illustrateurs", illustrateurs)
-
-# ------------------ FILTRAGE ------------------
+# ------------------ RECHERCHE ------------------
 def normalize(text):
     return unicodedata.normalize("NFKD", str(text)).encode("ASCII", "ignore").decode().lower()
 
+if "search_query" not in st.session_state:
+    st.session_state.search_query = ""
+
+# Suggestions basées sur le nom, extension et numéro
+search_dataset = df["nom"].fillna("").tolist() + df["extension"].fillna("").tolist() + df["numero"].astype(str).tolist()
+search_input = st.sidebar.text_input("Recherche 🔎", st.session_state.search_query)
+suggestions = [s[0] for s in process.extract(search_input, search_dataset, limit=10)] if search_input else []
+
+if suggestions:
+    suggestion_choice = st.sidebar.selectbox("Suggestions", suggestions, index=0)
+    if suggestion_choice != st.session_state.search_query:
+        st.session_state.search_query = suggestion_choice
+        search_input = suggestion_choice
+
+if search_input.strip() == "":
+    st.session_state.search_query = ""
+    search_input = ""
+
+# ------------------ FILTRES ------------------
+extensions = sorted(df["extension_annee"].dropna().unique())
+illustrateurs = sorted(df["Illustrateur"].dropna().unique())
+selected_extensions = st.sidebar.multiselect("Extensions", extensions)
+selected_illustrateurs = st.sidebar.multiselect("Illustrateurs", illustrateurs)
+
+# ------------------ APPLICATION DES FILTRES ------------------
 def apply_filters(data):
-    result = data.copy()
+    filtered = data.copy()
     if selected_extensions:
-        result = result[result["extension_annee"].isin(selected_extensions)]
+        filtered = filtered[filtered["extension_annee"].isin(selected_extensions)]
     if selected_illustrateurs:
-        result = result[result["Illustrateur"].isin(selected_illustrateurs)]
-    if search_query:
-        norm_query = normalize(search_query)
-        result = result[
-            result["nom"].apply(normalize).str.contains(norm_query, na=False) |
-            result["extension"].apply(normalize).str.contains(norm_query, na=False) |
-            result["numero"].astype(str).str.contains(search_query)
+        filtered = filtered[filtered["Illustrateur"].isin(selected_illustrateurs)]
+    if search_input:
+        search_normalized = normalize(search_input)
+        filtered = filtered[
+            filtered["nom"].apply(normalize).str.contains(search_normalized, na=False) |
+            filtered["extension"].apply(normalize).str.contains(search_normalized, na=False) |
+            filtered["numero"].astype(str).str.contains(search_input)
         ]
-    return result
+    return filtered
 
 df_filtered = apply_filters(df)
 
@@ -182,37 +189,43 @@ if menu == "🧾 Liste d’achats":
 elif menu == "📦 Ma Collection":
     df_filtered = df_filtered[df_filtered["possede"]]
 
-# ------------------ PAGINATION ------------------
+# ------------------ VUE + PAGINATION ------------------
+st.subheader(f"📘 {menu}")
+
+selected_view = st.segmented_control(
+    label="Mode d'affichage",
+    options=["Liste", "Grille"],
+    default="Liste",
+    label_visibility="collapsed"
+)
+
+view_mode = selected_view == "Liste"
+
+# Responsive : nombre de colonnes
+if viewport_width < 768:
+    num_cols = 1
+elif viewport_width < 1024:
+    num_cols = 2
+else:
+    num_cols = 4
+
 CARDS_PER_PAGE = 12
 total_pages = max(1, (len(df_filtered) - 1) // CARDS_PER_PAGE + 1)
 page = st.number_input("Page", min_value=1, max_value=total_pages, value=1, step=1)
 df_paginated = df_filtered.iloc[(page - 1) * CARDS_PER_PAGE : page * CARDS_PER_PAGE]
 
-# ------------------ AFFICHAGE ------------------
-col_left, col_right = st.columns([8, 2])
-with col_left:
-    st.subheader("📘 " + menu)
-with col_right:
-    selected_view = st.segmented_control(
-        label="Mode d'affichage",
-        options=["Liste", "Grille"],
-        default="Liste",
-        label_visibility="collapsed",
-    )
-    view_mode = selected_view == "Liste"
-
+# ------------------ AFFICHAGE DES CARTES ------------------
 def show_card(row, idx, grille=False):
     if grille:
-        with st.container():
-            st.markdown(f"**{row['nom']}**", help=row["nom_complet"])
-            st.image(row["image_url"], width=140)
-            b1, b2 = st.columns([1, 1])
-            with b1:
-                st.toggle("🌟", value=row["souhaite"], key=f"souhaite_{idx}", on_change=update_user_card,
-                          args=(active_user_id, row["nom_complet"], int(not row["souhaite"]), int(row["possede"])))
-            with b2:
-                st.toggle("📦", value=row["possede"], key=f"possede_{idx}", on_change=update_user_card,
-                          args=(active_user_id, row["nom_complet"], int(row["souhaite"]), int(not row["possede"])))
+        st.markdown(f"**{row['nom']}**", help=row["nom_complet"])
+        st.image(row["image_url"], width=140)
+        b1, b2 = st.columns([1, 1])
+        with b1:
+            st.toggle("🌟", value=row["souhaite"], key=f"souhaite_{idx}", on_change=update_user_card,
+                      args=(active_user_id, row["nom_complet"], int(not row["souhaite"]), int(row["possede"])))
+        with b2:
+            st.toggle("📦", value=row["possede"], key=f"possede_{idx}", on_change=update_user_card,
+                      args=(active_user_id, row["nom_complet"], int(row["souhaite"]), int(not row["possede"])))
     else:
         cols = st.columns([2, 3, 2, 2])
         with cols[0]:
@@ -229,11 +242,12 @@ def show_card(row, idx, grille=False):
             st.toggle("📦 Je l'ai", value=row["possede"], key=f"possede_{idx}", on_change=update_user_card,
                       args=(active_user_id, row["nom_complet"], int(row["souhaite"]), int(not row["possede"])))
 
+# ------------------ AFFICHAGE FINAL ------------------
 if view_mode:
     for idx, row in df_paginated.iterrows():
         show_card(row, idx, grille=False)
 else:
-    cols = st.columns(4)
+    cols = st.columns(num_cols)
     for i, (_, row) in enumerate(df_paginated.iterrows()):
-        with cols[i % 4]:
+        with cols[i % num_cols]:
             show_card(row, i, grille=True)
