@@ -6,6 +6,3 @@ requests
 scikit-learn
 tqdm
 rapidfuzz
-torch
-clip-by-openai
-streamlit-javascript==0.1.5
