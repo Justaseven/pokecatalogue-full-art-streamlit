@@ -3,14 +3,15 @@ import pandas as pd
 import sqlite3
 from io import BytesIO
 import unicodedata
-from rapidfuzz import process, fuzz
+from rapidfuzz import process
 
+# ------------------ CONFIGURATION ------------------
 CSV_DATA = "catalogue_cartes_mis_a_jour.csv"
 DB_PATH = "users_cards.db"
 
 st.set_page_config(page_title="Catalogue Full Art Pokémon", layout="wide")
 
-# ------------------ INIT DB ------------------
+# ------------------ BASE DE DONNÉES ------------------
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -37,7 +38,6 @@ def init_db():
 
 init_db()
 
-# ------------------ DB FONCTIONS ------------------
 def get_users():
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query("SELECT * FROM users", conn)
@@ -47,7 +47,8 @@ def get_users():
 def add_user(prenom, nom, age, photo_bytes):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("INSERT INTO users (prenom, nom, age, photo) VALUES (?, ?, ?, ?)", (prenom, nom, age, photo_bytes))
+    c.execute("INSERT INTO users (prenom, nom, age, photo) VALUES (?, ?, ?, ?)",
+              (prenom, nom, age, photo_bytes))
     conn.commit()
     conn.close()
 
@@ -81,7 +82,6 @@ def update_user_card(user_id, nom_complet, souhaite, possede):
 @st.cache_data
 def load_cards():
     df = pd.read_csv(CSV_DATA)
-    df["extension_annee"] = df["extension"]
     df["année"] = df["Date de sortie"].str.extract(r"(\d{4})", expand=False)
     df["extension_annee"] = df["année"].fillna("") + " - " + df["extension"]
     return df
@@ -106,7 +106,7 @@ with st.sidebar.expander("➕ Créer un utilisateur"):
             st.warning("Prénom et nom requis")
 
 if users.empty:
-    st.warning("Aucun utilisateur disponible. Créez un utilisateur.")
+    st.warning("Aucun utilisateur disponible.")
     st.stop()
 
 user_options = [f"{row['prenom']} {row['nom']}" for _, row in users.iterrows()]
@@ -123,83 +123,72 @@ with st.sidebar.expander("⚙️ Gérer utilisateur"):
         delete_user(active_user_id)
         st.rerun()
 
-# ------------------ DONNÉES UTILISATEUR ------------------
+# ------------------ CHARGEMENT ------------------
 df_user_cards = get_user_cards(active_user_id)
 df = df_cards.copy()
 df["souhaite"] = df["nom_complet"].isin(df_user_cards[df_user_cards["souhaite"] == 1]["nom_complet"])
 df["possede"] = df["nom_complet"].isin(df_user_cards[df_user_cards["possede"] == 1]["nom_complet"])
 
-# ------------------ MENU & RECHERCHE ------------------
-menu = st.sidebar.radio("Vue", ["Catalogue complet", "🧾 Liste d’achats", "📦 Ma Collection"])
-
+# ------------------ RECHERCHE ------------------
 def normalize(text):
     return unicodedata.normalize("NFKD", str(text)).encode("ASCII", "ignore").decode().lower()
 
-search_space = df["nom"].dropna().tolist() + df["extension"].dropna().tolist() + df["numero"].astype(str).dropna().tolist()
+search_space = df["nom"].dropna().tolist() + df["extension"].dropna().tolist() + df["numero"].astype(str).tolist()
+search_input = st.text_input("Recherche approximative")
+search_match = None
+if search_input.strip():
+    result = process.extractOne(search_input, search_space, scorer=process.fuzz.WRatio)
+    if result: search_match = result[0]
 
-search_input = st.selectbox("Recherche approximative", [""] + search_space, index=0)
-search_query = ""
-if search_input:
-    match = process.extractOne(search_input, search_space, scorer=fuzz.WRatio)
-    if match:
-        search_query = match[0]
+# ------------------ MENU ------------------
+menu = st.sidebar.radio("Vue", ["Catalogue complet", "🧾 Liste d’achats", "📦 Ma Collection"])
 
-# ------------------ FILTRES SIDEBAR ------------------
+# ------------------ FILTRES ------------------
 extensions = sorted(df["extension_annee"].dropna().unique())
-selected_extensions = st.sidebar.multiselect("Extensions", extensions)
-
 illustrateurs = sorted(df["Illustrateur"].dropna().unique())
+
+st.sidebar.markdown("---")
+selected_extensions = st.sidebar.multiselect("Extensions", extensions)
 selected_illustrateurs = st.sidebar.multiselect("Illustrateurs", illustrateurs)
 
-# ------------------ TRI DANS MA COLLECTION ------------------
-sort_order = []
-if menu == "📦 Ma Collection":
-    st.sidebar.markdown("---")
-    sort_order = st.sidebar.multiselect("🔀 Trier ma collection par", ["Scène", "Couleur d'ambiance"])
-    sort_fields = []
-    for val in sort_order:
-        if val == "Scène":
-            sort_fields.append("type_visuel")
-        elif val == "Couleur d'ambiance":
-            sort_fields.append("couleur_simplifiée")
-
 # ------------------ FILTRAGE ------------------
-def apply_filters(data):
-    result = data.copy()
-    if selected_extensions:
-        result = result[result["extension_annee"].isin(selected_extensions)]
-    if selected_illustrateurs:
-        result = result[result["Illustrateur"].isin(selected_illustrateurs)]
-    if search_query:
-        norm_query = normalize(search_query)
-        result = result[
-            result["nom"].apply(normalize).str.contains(norm_query, na=False) |
-            result["extension"].apply(normalize).str.contains(norm_query, na=False) |
-            result["numero"].astype(str).str.contains(search_query)
-        ]
-    return result
-
-df_filtered = apply_filters(df)
-
+df_filtered = df.copy()
+if selected_extensions:
+    df_filtered = df_filtered[df_filtered["extension_annee"].isin(selected_extensions)]
+if selected_illustrateurs:
+    df_filtered = df_filtered[df_filtered["Illustrateur"].isin(selected_illustrateurs)]
+if search_match:
+    norm = normalize(search_match)
+    df_filtered = df_filtered[
+        df_filtered["nom"].apply(normalize).str.contains(norm, na=False) |
+        df_filtered["extension"].apply(normalize).str.contains(norm, na=False) |
+        df_filtered["numero"].astype(str).str.contains(search_match)
+    ]
 if menu == "🧾 Liste d’achats":
     df_filtered = df_filtered[(df_filtered["souhaite"]) & (~df_filtered["possede"])]
 elif menu == "📦 Ma Collection":
     df_filtered = df_filtered[df_filtered["possede"]]
-    if sort_fields:
-        df_filtered = df_filtered.sort_values(by=sort_fields)
 
-# ------------------ PAGINATION ------------------
-CARDS_PER_PAGE = 12
-total_pages = max(1, (len(df_filtered) - 1) // CARDS_PER_PAGE + 1)
-page = st.number_input("Page", min_value=1, max_value=total_pages, value=1, step=1)
-df_paginated = df_filtered.iloc[(page - 1) * CARDS_PER_PAGE : page * CARDS_PER_PAGE]
+# ------------------ TRI MA COLLECTION (couleur/catégorie) ------------------
+if menu == "📦 Ma Collection":
+    st.sidebar.markdown("---")
+    sort_fields = st.sidebar.multiselect("Trier par", ["Couleur d'ambiance", "Scène"], default=[])
+    mapping = {"Couleur d'ambiance": "couleur_simplifiée", "Scène": "type_visuel"}
+    sort_columns = [mapping[s] for s in sort_fields if mapping[s] in df_filtered.columns]
+    if sort_columns:
+        df_filtered = df_filtered.sort_values(by=sort_columns)
 
 # ------------------ AFFICHAGE ------------------
 col_left, col_right = st.columns([8, 2])
 with col_left:
-    st.subheader("📘 " + menu)
+    st.subheader(f"📘 {menu}")
 with col_right:
-    view_mode = st.segmented_control("Mode d'affichage", options=["Liste", "Grille"], label_visibility="collapsed") == "Liste"
+    selected_view = st.segmented_control("Vue", options=["Liste", "Grille"], label_visibility="collapsed")
+    view_mode = selected_view == "Liste"
+
+CARDS_PER_PAGE = 12
+page = st.number_input("Page", 1, max(1, (len(df_filtered)-1)//CARDS_PER_PAGE+1), 1)
+df_paginated = df_filtered.iloc[(page-1)*CARDS_PER_PAGE: page*CARDS_PER_PAGE]
 
 def show_card(row, idx, grille=False):
     if grille:
@@ -207,41 +196,37 @@ def show_card(row, idx, grille=False):
             st.markdown(f"**{row['nom']}**", help=row["nom_complet"])
             st.image(row["image_url"], width=140)
             b1, b2 = st.columns([1, 1])
-            with b1:
-                st.toggle("🌟", value=row["souhaite"], key=f"souhaite_{idx}", on_change=update_user_card,
-                          args=(active_user_id, row["nom_complet"], int(not row["souhaite"]), int(row["possede"])))
-            with b2:
-                st.toggle("📦", value=row["possede"], key=f"possede_{idx}", on_change=update_user_card,
-                          args=(active_user_id, row["nom_complet"], int(row["souhaite"]), int(not row["possede"])))
+            with b1: st.toggle("🌟", row["souhaite"], key=f"s{idx}", on_change=update_user_card,
+                               args=(active_user_id, row["nom_complet"], int(not row["souhaite"]), int(row["possede"])))
+            with b2: st.toggle("📦", row["possede"], key=f"p{idx}", on_change=update_user_card,
+                               args=(active_user_id, row["nom_complet"], int(row["souhaite"]), int(not row["possede"])))
     else:
         cols = st.columns([2, 3, 2, 2])
-        with cols[0]:
-            st.image(row["image_url"], width=130)
+        with cols[0]: st.image(row["image_url"], width=130)
         with cols[1]:
             st.markdown(f"**{row['nom']}**")
             st.markdown(f"*{row['extension']}* — #{row['numero']}")
             st.markdown(f"🖌️ *{row['Illustrateur']}*")
             st.markdown(f"📅 {row['Date de sortie']}")
-            if "couleur_simplifiée" in row and pd.notna(row["couleur_simplifiée"]):
-                st.markdown(f"🎨 Couleur : **{row['couleur_simplifiée']}**")
-            if "type_visuel" in row and pd.notna(row["type_visuel"]):
-                st.markdown(f"🧩 Scène : *{row['type_visuel']}*")
         with cols[2]:
-            st.toggle("🌟 Je la veux", value=row["souhaite"], key=f"souhaite_{idx}", on_change=update_user_card,
+            st.toggle("🌟 Je la veux", row["souhaite"], key=f"s{idx}", on_change=update_user_card,
                       args=(active_user_id, row["nom_complet"], int(not row["souhaite"]), int(row["possede"])))
         with cols[3]:
-            st.toggle("📦 Je l'ai", value=row["possede"], key=f"possede_{idx}", on_change=update_user_card,
+            st.toggle("📦 Je l'ai", row["possede"], key=f"p{idx}", on_change=update_user_card,
                       args=(active_user_id, row["nom_complet"], int(row["souhaite"]), int(not row["possede"])))
 
+# ------------------ AFFICHAGE FINAL ------------------
 if view_mode:
     for idx, row in df_paginated.iterrows():
         show_card(row, idx, grille=False)
 else:
-    import streamlit_javascript as st_js
-    page_info = st_js.get_page_info()
-    screen_width = page_info.get("clientWidth", 1200)
-    num_cols = max(2, min(4, screen_width // 300))
-    grid_cols = st.columns(num_cols)
+    viewport = st.query_params.get("viewport", 800)
+    try:
+        viewport = int(viewport)
+    except:
+        viewport = 800
+    num_cols = max(2, min(4, viewport // 300))
+    cols = st.columns(num_cols)
     for i, (_, row) in enumerate(df_paginated.iterrows()):
-        with grid_cols[i % num_cols]:
+        with cols[i % num_cols]:
             show_card(row, i, grille=True)
